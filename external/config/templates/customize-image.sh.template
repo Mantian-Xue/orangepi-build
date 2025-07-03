@@ -37,6 +37,8 @@ Main() {
 			;;
 		focal)
 			# your code here
+			 InstallMowerPackages
+			 ConfigureMowerSystem
 			;;
 	esac
 } # Main
@@ -238,5 +240,255 @@ InstallAdvancedDesktop()
 	[[ -f /usr/share/doc/avahi-daemon/examples/ssh.service ]] && cp /usr/share/doc/avahi-daemon/examples/ssh.service /etc/avahi/services/
 	apt clean
 } # InstallAdvancedDesktop
+
+# Mower Project Functions
+# Uncomment and modify as needed for your mower project
+
+InstallMowerPackages() {
+	echo "Installing mower-specific packages..."
+	
+	# Add ROS Noetic repository
+	echo "Adding ROS Noetic repository..."
+	. /etc/lsb-release
+	echo "deb http://mirrors.tuna.tsinghua.edu.cn/ros/ubuntu/ `lsb_release -cs` main" > /etc/apt/sources.list.d/ros-latest.list
+	
+	# Add ROS GPG key
+	curl -sSL 'http://keyserver.ubuntu.com/pks/lookup?op=get&search=0xC1CF6E31E6BADE8868B172B4F42ED6FBAB17C654' | apt-key add -
+	
+	# Update package lists
+	apt-get update > /dev/null 2>&1
+	
+	# Install all required packages
+	echo "Installing development and ROS packages..."
+	DEBIAN_FRONTEND=noninteractive apt-get install -y \
+		pkgconf \
+		build-essential \
+		python3-catkin-tools \
+		libceres-dev \
+		nlohmann-json3-dev \
+		libgoogle-glog-dev \
+		libprotobuf-dev \
+		libgsl-dev \
+		libjsoncpp-dev \
+		libpcl-dev \
+		libboost-all-dev \
+		libcairo2-dev \
+		libgflags-dev \
+		liblua5.2-dev \
+		libsuitesparse-dev \
+		ninja-build \
+		stow \
+		libmosquitto-dev \
+		libcgal-dev \
+		libeigen3-dev \
+		libblas-dev \
+		liblapack-dev \
+		libasio-dev \
+		libv4l-dev \
+		libompl-dev \
+		libnanomsg-dev \
+		python3-rosdep \
+		minicom \
+		socat \
+		tmux \
+		gdb \
+		systemd-coredump \
+		libopenvdb-dev
+	
+	# Install ROS Noetic packages
+	echo "Installing ROS Noetic packages..."
+	DEBIAN_FRONTEND=noninteractive apt-get install -y \
+		ros-noetic-rosmon \
+		ros-noetic-catkin \
+		ros-noetic-behaviortree-cpp \
+		ros-noetic-image-transport \
+		ros-noetic-cv-bridge \
+		ros-noetic-teleop-twist-keyboard \
+		ros-noetic-foxglove-bridge \
+		ros-noetic-foxglove-msgs \
+		ros-noetic-backward-ros \
+		ros-noetic-costmap-2d \
+		ros-noetic-tf2-sensor-msgs \
+		ros-noetic-libg2o \
+		ros-noetic-nodelet \
+		ros-noetic-pcl-ros \
+		ros-noetic-pcl-conversions \
+		ros-noetic-image-transport-plugins \
+		ros-noetic-imagezero-image-transport \
+		ros-noetic-polled-camera \
+		ros-noetic-grid-map \
+		ros-noetic-sound-play \
+		ros-noetic-eigen-conversions \
+		ros-noetic-geodesy \
+		ros-noetic-geographic-msgs \
+		ros-noetic-geographic-info \
+		ros-noetic-tf-conversions \
+		ros-noetic-tf2-ros \
+		ros-noetic-tf2-eigen \
+		ros-noetic-robot-state-publisher \
+		ros-noetic-camera-info-manager \
+		ros-noetic-stage-ros
+	
+	# Initialize rosdep (if not already done)
+	if [ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]; then
+		rosdep init
+	fi
+}
+
+InstallAbseilCpp() {
+	echo "Installing Abseil C++ library..."
+	
+	# Check if already installed
+	if ldconfig -p | grep -q libabsl; then
+		echo "Abseil C++ already installed, skipping..."
+		return 0
+	fi
+	
+	# Save current directory
+	local original_dir=$(pwd)
+	cd /tmp
+	
+	# Clone Abseil C++ repository
+	git clone https://github.com/abseil/abseil-cpp.git
+	cd abseil-cpp
+	git checkout 215105818dfde3174fe799600bb0f3cae233d0bf # 20211102.0
+	
+	# Build and install
+	mkdir build
+	cd build
+	cmake -G Ninja \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+		-DCMAKE_INSTALL_PREFIX=/usr/local/stow/absl \
+		..
+	ninja
+	ninja install
+	
+	# Use stow to manage installation
+	cd /usr/local/stow
+	stow absl
+	
+	# Update library cache
+	ldconfig
+	
+	# Clean up
+	cd /tmp
+	rm -rf abseil-cpp
+	
+	# Return to original directory
+	cd "$original_dir"
+	
+	echo "Abseil C++ installation completed."
+}
+
+InstallCasADiCpp() {
+	echo "Installing CasADi C++ library..."
+	
+	# Check if already installed
+	if ldconfig -p | grep -q libcasadi.so; then
+		echo "CasADi C++ already installed, skipping..."
+		return 0
+	fi
+	
+	# Install additional dependencies for CasADi
+	DEBIAN_FRONTEND=noninteractive apt-get install -y \
+		pkg-config \
+		liblapack-dev \
+		libopenblas-dev \
+		gfortran \
+		coinor-libipopt-dev
+	
+	# Save current directory
+	local original_dir=$(pwd)
+	cd /tmp
+	
+	# Create a directory for CasADi build
+	mkdir -p casadi_build
+	cd casadi_build
+	
+	# Clone CasADi repository
+	git clone --branch 3.6.6 --depth 1 https://github.com/casadi/casadi.git
+	cd casadi
+	
+	# Create and enter build directory
+	mkdir build && cd build
+	
+	# Configure build options
+	cmake -DWITH_PYTHON=OFF -DWITH_EXAMPLES=OFF -DWITH_IPOPT=ON ..
+	
+	# Build (use all available cores)
+	make -j$(nproc)
+	
+	# Install
+	make install
+	
+	# Update dynamic linker cache
+	ldconfig
+	
+	# Clean up
+	cd /tmp
+	rm -rf casadi_build
+	
+	# Return to original directory
+	cd "$original_dir"
+	
+	echo "CasADi C++ installation completed."
+}
+
+ConfigureMowerSystem() {
+	echo "Configuring mower system..."
+	
+	# Configure ROS environment
+	echo "Configuring ROS environment..."
+	
+	# Add ROS setup to bashrc for all users
+	echo "source /opt/ros/noetic/setup.bash" >> /etc/bash.bashrc
+	
+	# Create mower user
+	if ! id "mower" &>/dev/null; then
+		useradd -m -s /bin/bash mower
+		usermod -a -G sudo,dialout,gpio,spi,i2c mower
+		echo "mower:mower123" | chpasswd
+		
+		# Add ROS environment for mower user
+		echo "source /opt/ros/noetic/setup.bash" >> /home/mower/.bashrc
+		echo "export ROS_WORKSPACE=/opt/mower_ws" >> /home/mower/.bashrc
+		echo "if [ -f /opt/mower_ws/devel/setup.bash ]; then" >> /home/mower/.bashrc
+		echo "  source /opt/mower_ws/devel/setup.bash" >> /home/mower/.bashrc
+		echo "fi" >> /home/mower/.bashrc
+	fi
+	
+	# Install Abseil C++ library
+	InstallAbseilCpp
+	
+	# Install CasADi C++ library
+	InstallCasADiCpp
+	
+	# Create systemd service for ROS core (optional)
+	cat > /etc/systemd/system/roscore.service << EOF
+[Unit]
+Description=ROS Core
+After=network.target
+
+[Service]
+Type=forking
+User=mower
+Group=mower
+WorkingDirectory=/home/mower
+Environment="ROS_HOME=/home/mower/.ros"
+Environment="ROS_LOG_DIR=/home/mower/.ros/log"
+ExecStartPre=/bin/bash -c "source /opt/ros/noetic/setup.bash"
+ExecStart=/bin/bash -c "source /opt/ros/noetic/setup.bash && roscore &"
+ExecStop=/usr/bin/pkill -f roscore
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+	
+	# Don't enable roscore by default, let user decide
+	# systemctl enable roscore
+}
 
 Main "$@"
